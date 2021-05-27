@@ -1,4 +1,8 @@
-import { gql } from "apollo-server";
+import { ApolloError, gql } from "apollo-server";
+import { Auth } from "../lib/service/auth";
+import { transformDoc } from "../lib/utils/doc";
+import UserModel from "../model/user";
+import type { SignupInput, UserPayload } from "../types/graphql/user";
 
 export const typeDefs = gql`
   extend type Query {
@@ -80,3 +84,44 @@ export const typeDefs = gql`
     password: String!
   }
 `;
+
+const UserQueryResolvers = {};
+
+const UserMutationResolvers = {
+  signUp: async (_: any, { userDetails }: { userDetails: SignupInput }) => {
+    try {
+      const existingUser = await UserModel.findByEmail(userDetails.email);
+      if (existingUser) {
+        throw new ApolloError("User already exists", "409");
+      }
+      const newUser = await UserModel.createUser(userDetails);
+      const auth = new Auth<UserPayload>();
+      const token = await auth.createToken({
+        email: newUser.email,
+        id: newUser._id,
+      });
+      return {
+        code: 201,
+        message: "User successfully created",
+        user: transformDoc(newUser),
+        token,
+      };
+    } catch (err) {
+      return {
+        code: err instanceof ApolloError ? 409 : 500,
+        message: err.message,
+        user: null,
+        token: null,
+      };
+    }
+  },
+};
+
+export const resolvers = {
+  Query: {
+    ...UserQueryResolvers,
+  },
+  Mutation: {
+    ...UserMutationResolvers,
+  },
+};

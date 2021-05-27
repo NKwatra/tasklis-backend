@@ -1,5 +1,6 @@
 import { gql, makeExecutableSchema } from "apollo-server";
-import { typeDefs as UserSchema } from "./user";
+import { typeDefs as UserSchema, resolvers as UserResolvers } from "./user";
+import { merge } from "lodash";
 
 const Root = gql`
   type Query {
@@ -23,7 +24,9 @@ const Root = gql`
   }
 `;
 
+const resolvers = {};
+
 export default makeExecutableSchema({
   typeDefs: [Root, UserSchema],
-  resolvers: {},
+  resolvers: merge(resolvers, UserResolvers),
 });

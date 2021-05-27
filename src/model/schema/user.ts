@@ -2,27 +2,32 @@ import { Schema, model } from "mongoose";
 import { User } from "../../types/model/schema/user";
 import bcrypt from "bcrypt";
 
-const userSchema = new Schema<User>({
-  email: {
-    type: String,
-    required: true,
-    lowercase: true,
-  },
-  password: {
-    type: String,
-    required: true,
-  },
-  name: {
-    firstName: {
+const userSchema = new Schema<User>(
+  {
+    email: {
+      type: String,
+      required: true,
+      lowercase: true,
+    },
+    password: {
       type: String,
       required: true,
     },
-    lastName: {
-      type: String,
-      required: true,
+    name: {
+      firstName: {
+        type: String,
+        required: true,
+      },
+      lastName: {
+        type: String,
+        required: true,
+      },
     },
   },
-});
+  {
+    timestamps: true,
+  }
+);
 
 userSchema.methods.validatePassword = async function (password: string) {
   const isValid = await bcrypt.compare(password, this.password);
