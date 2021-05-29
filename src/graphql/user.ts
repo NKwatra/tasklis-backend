@@ -3,7 +3,11 @@ import { Auth } from "../lib/service/auth";
 import { transformDoc } from "../lib/utils/doc";
 import { setRefreshTokenCookie } from "../lib/utils/refresh";
 import UserModel from "../model/user";
-import type { SignupInput, UserPayload } from "../types/graphql/user";
+import type {
+  LoginInput,
+  SignupInput,
+  UserPayload,
+} from "../types/graphql/user";
 import type { Context } from "../types/lib/utils/context";
 
 export const typeDefs = gql`
@@ -120,31 +124,58 @@ const UserQueryResolvers = {
     if (!refresh_token) {
       throw new ApolloError("Refresh token not supplied", "400");
     }
-    try {
-      const auth = new Auth<UserPayload>();
-      const {
-        valid,
-        token: refresh,
-        payload,
-      } = await auth.verifyRefreshTokenAndCreateNew(refresh_token);
+    const auth = new Auth<UserPayload>();
+    const {
+      valid,
+      token: refresh,
+      payload,
+    } = await auth.verifyRefreshTokenAndCreateNew(refresh_token);
 
-      if (!valid) {
-        throw new AuthenticationError("Session expired");
-      } else {
-        const token = await auth.createToken(payload as UserPayload);
-        await UserModel.updateUser(payload!.id, {
-          refresh_token: refresh as string,
-        });
-        setRefreshTokenCookie(res, refresh as string);
-        return {
-          code: 200,
-          token,
-          message: "Token refreshed successfully",
-        };
-      }
-    } catch (err) {
-      throw err;
+    if (!valid) {
+      throw new AuthenticationError("Session expired");
+    } else {
+      const token = await auth.createToken(payload as UserPayload);
+      await UserModel.updateUser(payload!.id, {
+        refresh_token: refresh as string,
+      });
+      setRefreshTokenCookie(res, refresh as string);
+      return {
+        code: 200,
+        token,
+        message: "Token refreshed successfully",
+      };
     }
+  },
+  login: async (
+    _: any,
+    { credentials: { email, password } }: LoginInput,
+    { res }: Context
+  ) => {
+    const user = await UserModel.findByEmail(email);
+    if (!user) {
+      throw new ApolloError("User does not exist", "400");
+    }
+    const isPasswordValid = await user.validatePassword(password);
+    if (!isPasswordValid) {
+      throw new AuthenticationError("Invalid username or password");
+    }
+    const auth = new Auth<UserPayload>();
+    const token = await auth.createToken({
+      id: user._id,
+      email: user.email,
+    });
+    const refresh_token = await auth.createRefreshToken({
+      id: user._id,
+      email: user.email,
+    });
+    setRefreshTokenCookie(res, refresh_token);
+    const updatedUser = await UserModel.updateUser(user._id, { refresh_token });
+    return {
+      code: 200,
+      message: "Successfull login",
+      user: transformDoc(updatedUser),
+      token,
+    };
   },
 };
 
@@ -154,34 +185,30 @@ const UserMutationResolvers = {
     { userDetails }: { userDetails: SignupInput },
     { res }: Context
   ) => {
-    try {
-      const existingUser = await UserModel.findByEmail(userDetails.email);
-      if (existingUser) {
-        throw new ApolloError("User already exists", "409");
-      }
-      const newUser = await UserModel.createUser(userDetails);
-      const auth = new Auth<UserPayload>();
-      const token = await auth.createToken({
-        email: newUser.email,
-        id: newUser._id,
-      });
-      const refresh_token = await auth.createRefreshToken({
-        email: newUser.email,
-        id: newUser._id,
-      });
-      const updatedUser = await UserModel.updateUser(newUser._id, {
-        refresh_token,
-      });
-      setRefreshTokenCookie(res, refresh_token);
-      return {
-        code: 201,
-        message: "User successfully created",
-        user: transformDoc(updatedUser),
-        token,
-      };
-    } catch (err) {
-      throw err;
+    const existingUser = await UserModel.findByEmail(userDetails.email);
+    if (existingUser) {
+      throw new ApolloError("User already exists", "409");
     }
+    const newUser = await UserModel.createUser(userDetails);
+    const auth = new Auth<UserPayload>();
+    const token = await auth.createToken({
+      email: newUser.email,
+      id: newUser._id,
+    });
+    const refresh_token = await auth.createRefreshToken({
+      email: newUser.email,
+      id: newUser._id,
+    });
+    const updatedUser = await UserModel.updateUser(newUser._id, {
+      refresh_token,
+    });
+    setRefreshTokenCookie(res, refresh_token);
+    return {
+      code: 201,
+      message: "User successfully created",
+      user: transformDoc(updatedUser),
+      token,
+    };
   },
 };
 

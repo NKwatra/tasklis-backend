@@ -21,3 +21,10 @@ export interface UpdateUserInput {
   firstName?: string;
   lastName?: string;
 }
+
+export interface LoginInput {
+  credentials: {
+    email: string;
+    password: string;
+  };
+}

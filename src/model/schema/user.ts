@@ -30,7 +30,9 @@ const userSchema = new Schema<User>(
   }
 );
 
-userSchema.methods.validatePassword = async function (password: string) {
+userSchema.methods.validatePassword = async function (
+  password: string
+): Promise<boolean> {
   const isValid = await bcrypt.compare(password, this.password);
   return isValid;
 };

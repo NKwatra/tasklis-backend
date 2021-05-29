@@ -1,4 +1,5 @@
 import type { Request, Response } from "express";
+import type { GraphQLError } from "graphql";
 import type { UserPayload } from "../../types/graphql/user";
 import type { Context } from "../../types/lib/utils/context";
 import { Auth } from "../service/auth";
