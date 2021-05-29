@@ -7,6 +7,8 @@ export interface User extends Document {
     firstName: string;
     lastName: string;
   };
+  // JWT refresh token
+  refresh_token: string;
   /**
    * @param password: Plain text password
    *

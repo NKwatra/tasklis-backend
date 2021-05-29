@@ -16,3 +16,8 @@ export interface UserPayload {
   email: string;
   id: string;
 }
+
+export interface UpdateUserInput {
+  firstName?: string;
+  lastName?: string;
+}

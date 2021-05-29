@@ -1,8 +1,10 @@
-import { ApolloError, gql } from "apollo-server";
+import { ApolloError, AuthenticationError, gql } from "apollo-server-express";
 import { Auth } from "../lib/service/auth";
 import { transformDoc } from "../lib/utils/doc";
+import { setRefreshTokenCookie } from "../lib/utils/refresh";
 import UserModel from "../model/user";
 import type { SignupInput, UserPayload } from "../types/graphql/user";
+import type { Context } from "../types/lib/utils/context";
 
 export const typeDefs = gql`
   extend type Query {
@@ -14,6 +16,10 @@ export const typeDefs = gql`
     Used to verify the OTP send to user email
     """
     verifyOTP(email: String!): VerifyOTPResult!
+    """
+    Used to refresh JWT tokens on the client
+    """
+    refreshToken: RefreshTokenResult!
   }
 
   extend type Mutation {
@@ -29,6 +35,10 @@ export const typeDefs = gql`
     To reset user's password
     """
     resetPassword(credentials: LoginInput!): AuthResult!
+    """
+    To update user's first and last name
+    """
+    updateUser(updates: UpdateUserInput): UpdateUserResult!
   }
 
   type FullName {
@@ -55,6 +65,12 @@ export const typeDefs = gql`
     token: String
   }
 
+  type RefreshTokenResult {
+    code: Int!
+    message: String!
+    token: String
+  }
+
   type GenerateOTPResult implements MutResult {
     code: Int!
     message: String!
@@ -62,6 +78,15 @@ export const typeDefs = gql`
     Validity of OTP in terms of number of hours
     """
     validity: Int!
+  }
+
+  type UpdateUserResult implements MutResult {
+    code: Int!
+    message: String!
+    """
+    Updated user object
+    """
+    user: User
   }
 
   type VerifyOTPResult {
@@ -83,12 +108,52 @@ export const typeDefs = gql`
     email: String!
     password: String!
   }
+
+  input UpdateUserInput {
+    firstName: String
+    lastName: String
+  }
 `;
 
-const UserQueryResolvers = {};
+const UserQueryResolvers = {
+  refreshToken: async (_: any, _null: any, { refresh_token, res }: Context) => {
+    if (!refresh_token) {
+      throw new ApolloError("Refresh token not supplied", "400");
+    }
+    try {
+      const auth = new Auth<UserPayload>();
+      const {
+        valid,
+        token: refresh,
+        payload,
+      } = await auth.verifyRefreshTokenAndCreateNew(refresh_token);
+
+      if (!valid) {
+        throw new AuthenticationError("Session expired");
+      } else {
+        const token = await auth.createToken(payload as UserPayload);
+        await UserModel.updateUser(payload!.id, {
+          refresh_token: refresh as string,
+        });
+        setRefreshTokenCookie(res, refresh as string);
+        return {
+          code: 200,
+          token,
+          message: "Token refreshed successfully",
+        };
+      }
+    } catch (err) {
+      throw err;
+    }
+  },
+};
 
 const UserMutationResolvers = {
-  signUp: async (_: any, { userDetails }: { userDetails: SignupInput }) => {
+  signUp: async (
+    _: any,
+    { userDetails }: { userDetails: SignupInput },
+    { res }: Context
+  ) => {
     try {
       const existingUser = await UserModel.findByEmail(userDetails.email);
       if (existingUser) {
@@ -100,19 +165,22 @@ const UserMutationResolvers = {
         email: newUser.email,
         id: newUser._id,
       });
+      const refresh_token = await auth.createRefreshToken({
+        email: newUser.email,
+        id: newUser._id,
+      });
+      const updatedUser = await UserModel.updateUser(newUser._id, {
+        refresh_token,
+      });
+      setRefreshTokenCookie(res, refresh_token);
       return {
         code: 201,
         message: "User successfully created",
-        user: transformDoc(newUser),
+        user: transformDoc(updatedUser),
         token,
       };
     } catch (err) {
-      return {
-        code: err instanceof ApolloError ? 409 : 500,
-        message: err.message,
-        user: null,
-        token: null,
-      };
+      throw err;
     }
   },
 };
